@@ -65,28 +65,16 @@ function Get-InstalledSshCopyIdVersion {
         [string]$LocalExePath
     )
 
-    $candidatePaths = @()
-
-    # 1) Explicit local exe path (in InstallDir)
-    if ($LocalExePath -and (Test-Path $LocalExePath)) {
-        $candidatePaths += $LocalExePath
-    }
-
-    # 2) Whatever is currently on PATH
-    $cmd = Get-Command "ssh-copy-id" -ErrorAction SilentlyContinue
-    if ($cmd) {
-        $candidatePaths += $cmd.Source
-    }
-
-    foreach ($path in ($candidatePaths | Select-Object -Unique)) {
+    # A copy elsewhere on PATH must not skip installation into InstallDir.
+    if ($LocalExePath -and (Test-Path -LiteralPath $LocalExePath -PathType Leaf)) {
         try {
-            $output = & $path -v 2>$null
+            $output = & $LocalExePath -v 2>$null | Out-String
             if ($output -match '(\d+\.\d+\.\d+)') {
                 return [version]$Matches[1]
             }
         }
         catch {
-            # ignore and try next candidate
+            # An unreadable or broken local copy should be replaced.
         }
     }
 
@@ -104,6 +92,9 @@ if (-not $InstallDir) {
     }
 }
 
+# PATH entries must also work when a later terminal uses another directory.
+$InstallDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($InstallDir)
+
 Write-Host "Installing ssh-copy-id to: $InstallDir" -ForegroundColor Cyan
 
 $ExePath = Join-Path $InstallDir $AppName
@@ -111,11 +102,12 @@ $ExePath = Join-Path $InstallDir $AppName
 # Check versions
 $latestVersion    = Get-LatestGithubVersion -ApiUrl $GitHubApiLatestUrl
 $installedVersion = Get-InstalledSshCopyIdVersion -LocalExePath $ExePath
+$downloadRequired = $true
 
 if ($installedVersion -and $latestVersion) {
     if ($installedVersion -ge $latestVersion) {
         Write-Host "ssh-copy-id is already up to date (installed: $installedVersion, latest: $latestVersion)." -ForegroundColor Green
-        return
+        $downloadRequired = $false
     }
     else {
         Write-Host "Updating ssh-copy-id from $installedVersion to $latestVersion..." -ForegroundColor Cyan
@@ -128,23 +120,34 @@ else {
     Write-Host "Installing latest ssh-copy-id (could not determine version from GitHub API)." -ForegroundColor Cyan
 }
 
-# Create install directory (if needed)
-if (-not (Test-Path $InstallDir)) {
-    New-Item -ItemType Directory -Path $InstallDir | Out-Null
-}
+if ($downloadRequired) {
+    # Download beside the executable so a failed update leaves it intact.
+    if (-not (Test-Path -LiteralPath $InstallDir -PathType Container)) {
+        New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+    }
 
-# Download executable
-Write-Host "Downloading latest ssh-copy-id from GitHub..." -ForegroundColor Cyan
+    $temporaryPath = Join-Path $InstallDir ([IO.Path]::GetRandomFileName())
+    Write-Host "Downloading latest ssh-copy-id from GitHub..." -ForegroundColor Cyan
 
-try {
-    Invoke-WebRequest -Uri $DownloadUrl -OutFile $ExePath -UseBasicParsing
-}
-catch {
-    Write-Error "Failed to download ssh-copy-id from $DownloadUrl"
-    throw
-}
+    try {
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $temporaryPath -UseBasicParsing
+        if (-not (Test-Path -LiteralPath $temporaryPath -PathType Leaf) -or
+            (Get-Item -LiteralPath $temporaryPath).Length -eq 0) {
+            throw "The downloaded executable is empty."
+        }
+        Move-Item -LiteralPath $temporaryPath -Destination $ExePath -Force
+    }
+    catch {
+        throw "Failed to download ssh-copy-id from ${DownloadUrl}: $($_.Exception.Message)"
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporaryPath) {
+            Remove-Item -LiteralPath $temporaryPath -Force
+        }
+    }
 
-Write-Host "Downloaded to $ExePath" -ForegroundColor Green
+    Write-Host "Downloaded to $ExePath" -ForegroundColor Green
+}
 
 # Optionally add to PATH
 if (-not $NoModifyPath) {
