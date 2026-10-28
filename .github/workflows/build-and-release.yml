@@ -10,6 +10,8 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      UV_PYTHON: "3.12"
 
     steps:
       - name: Checkout repository
@@ -24,10 +26,23 @@ jobs:
             uv.lock
 
       - name: Install Python
-        run: uv python install
+        run: uv python install 3.12
 
       - name: Sync dependencies (incl. dev)
         run: uv sync
+
+      - name: Check release tag matches package version
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $sourceVersion = uv run python -c "from ssh_copy_id.version import get_version; print(get_version())"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not read the package version."
+          }
+          $expectedTag = "v$($sourceVersion.Trim())"
+          if ($env:GITHUB_REF_NAME -cne $expectedTag) {
+            throw "Release tag '$env:GITHUB_REF_NAME' does not match package version '$expectedTag'."
+          }
 
       - name: Run Python regression tests
         run: uv run python -m unittest discover -s tests -v
@@ -38,6 +53,21 @@ jobs:
 
       - name: Build EXE with PyInstaller
         run: uv run pyinstaller --icon=logo.ico --onefile --name ssh-copy-id --paths src src/ssh_copy_id/main.py
+
+      - name: Check EXE reports package version
+        shell: pwsh
+        run: |
+          $sourceVersion = uv run python -c "from ssh_copy_id.version import get_version; print(get_version())"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not read the package version."
+          }
+          $exeVersion = & ./dist/ssh-copy-id.exe -v
+          if ($LASTEXITCODE -ne 0) {
+            throw "The compiled executable failed its version check."
+          }
+          if ($exeVersion.Trim() -cne $sourceVersion.Trim()) {
+            throw "EXE version '$exeVersion' does not match package version '$sourceVersion'."
+          }
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
