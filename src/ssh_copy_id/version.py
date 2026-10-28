@@ -1,12 +1,8 @@
-from pathlib import Path
-import tomllib
+"""The package version, also read by Hatch when building distributions."""
 
-def get_version():
-    version = "unknown"
-    pyproject_toml_file = Path(__file__).parent.parent.parent / "pyproject.toml"
-    if pyproject_toml_file.exists() and pyproject_toml_file.is_file():
-        with open(pyproject_toml_file, 'rb') as pyproject_toml:
-            data = tomllib.load(pyproject_toml)
-            if "project" in data and "version" in data["project"]:
-                version = data["project"]["version"]
-    return version
+__version__ = "0.1.16"
+
+
+def get_version() -> str:
+    """Return the version without requiring repository files at runtime."""
+    return __version__

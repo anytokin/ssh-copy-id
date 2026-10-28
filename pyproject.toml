@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ssh-copy-id"
-version = "0.1.16"
+dynamic = ["version"]
 description = "Windows alternative for ssh-copy-id"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -18,6 +18,9 @@ dev = ["pyinstaller"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ssh_copy_id"]
+
+[tool.hatch.version]
+path = "src/ssh_copy_id/version.py"
 
 [tool.uv.sources]
 ssh_copy_id = { path = "src/ssh_copy_id", editable = true }
