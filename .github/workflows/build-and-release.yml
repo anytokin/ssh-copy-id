@@ -29,6 +29,13 @@ jobs:
       - name: Sync dependencies (incl. dev)
         run: uv sync
 
+      - name: Run Python regression tests
+        run: uv run python -m unittest discover -s tests -v
+
+      - name: Run Windows installer regression tests
+        shell: powershell
+        run: ./tests/test_installer.ps1
+
       - name: Build EXE with PyInstaller
         run: uv run pyinstaller --icon=logo.ico --onefile --name ssh-copy-id --paths src src/ssh_copy_id/main.py
 
